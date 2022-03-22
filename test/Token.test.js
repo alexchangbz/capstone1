@@ -57,10 +57,14 @@ contract('Token', ([deployer, receiver, exchange]) => {
         let result
         let amount
 
-        describe("success", async () => {
-            beforeEach( async () => {
-                amount = web3.utils.toWei("3", "ether")
-                result = await token.transfer(receiver, amount, { from: deployer })
+        beforeEach( async () => {
+            amount = web3.utils.toWei("3", "ether")
+            await token.approve(exchange, amount, { from: deployer })
+        })
+
+        describe("success", () => {
+            beforeEach( async () => {    
+                result = await token.transferFrom(deployer, receiver, amount, { from: exchange })
             })
 
             it("transfer token balances", async () => {
@@ -81,6 +85,11 @@ contract('Token', ([deployer, receiver, exchange]) => {
                 assert.equal(balanceOf.toString(), web3.utils.toWei("3", "ether").toString())
             })  
 
+            it("resets the allowance", async () => {
+                const allowance = await token.allowance(deployer, exchange)
+                allowance.toString().should.equal('0')
+            })
+
             it("emits a transfer event", async () => {
                 const log = result.logs[0]
                 assert.equal(log.event, 'Transfer')
@@ -91,7 +100,7 @@ contract('Token', ([deployer, receiver, exchange]) => {
             })
         })
 
-        describe("failure", async () => {
+        describe("failure", () => {
 
             it("rejects insufficient balance", async () => {
                 let invalidAmount = web3.utils.toWei("10000000", "ether")
@@ -128,7 +137,7 @@ contract('Token', ([deployer, receiver, exchange]) => {
 
     })
 
-    describe("approving tokens", () => {
+    describe("delegated token transfers", () => {
         let result
         let amount
 
@@ -142,10 +151,63 @@ contract('Token', ([deployer, receiver, exchange]) => {
                 const allowance = await token.allowance(deployer, exchange)
                 allowance.toString().should.equal(amount.toString())
             })
+
+            it("emits an Approval event", async () => {
+                const log = result.logs[0]
+                assert.equal(log.event, 'Approval')
+                const event = log.args
+                assert.equal(event.owner.toString(), deployer)
+                assert.equal(event.spender.toString(), exchange)
+                assert.equal(event.value.toString(), web3.utils.toWei("10", "ether").toString())
+            })
         })
 
         describe("failure", () => {
-            
+            let invalidAmount = web3.utils.toWei("10000000", "ether")
+
+            it("reject insufficient amount", async () => {
+                const errorCheck = async () => {
+                    try {
+                        await token.transferFrom(deployer, receiver, invalidAmount, { from: exchange })
+                        return true
+                    } catch (error) {
+                        console.log(error.reason)
+                        return false
+                    }
+                } 
+                const testResult = await errorCheck()
+                testResult.should.be.false 
+            })
+
+            it("rejects invalid spenders", async () => {
+                const errorCheck = async () => {
+                    try {
+                        await token.approve(0x0, amount, { from: deployer })
+                        return true
+                    } catch (error) {
+                        console.log(error.reason)
+                        return false
+                    }
+                }
+
+                const testResult = await errorCheck()
+                testResult.should.be.false  
+            })
+
+            it("rejects invalid recipients", async () => {
+                const errorCheck = async () => {
+                    try {
+                        await token.transferFrom(deployer, 0x0, amount, { from: exchange })
+                        return true
+                    } catch (error) {
+                        console.log(error.reason)
+                        return false
+                    }
+                }
+
+                const testResult = await errorCheck()
+                testResult.should.be.false 
+            })
         })
     })
 
